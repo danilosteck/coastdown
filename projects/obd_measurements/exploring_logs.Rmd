@@ -1,0 +1,186 @@
+---
+title: "exploring_logs"
+author: "Danilo Steckelberg"
+date: "3/15/2022"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+
+data_correct <- function(df) {
+  df <- df %>% 
+    transmute(gps_time = GPS.Time,
+              device_time = strptime(Device.Time, format = c('%d-%b-%Y %H:%M:%OS')),
+              latitude = as.numeric(Latitude),
+              longitude = as.numeric(Longitude),
+              altitude = as.numeric(Altitude),
+              bearing = as.numeric(Bearing),
+              gps_mps = as.numeric(GPS.Speed..Meters.second.),
+              horizontal_dilution_precision = as.numeric(Horizontal.Dilution.of.Precision),
+              torque = as.numeric(Torque.Nm.),
+              engine_absolute_load = as.numeric(Engine.Load.Absolute....),
+              fuel_rate = as.numeric(Fuel.Rate..direct.from.ECU..L.m.),
+              power_at_wheels = as.numeric(Engine.kW..At.the.wheels..kW.),
+              throttle_position = as.numeric(Throttle.Position.Manifold....),
+              relative_app = as.numeric(Relative.Accelerator.Pedal.Position...),
+              relative_throttle = as.numeric(Relative.Throttle.Position...),
+              barometric_pressure = as.numeric(Barometric.pressure..from.vehicle..psi.),
+              rpm = as.numeric(Engine.RPM.rpm.),
+              afr_measured = as.numeric(Air.Fuel.Ratio.Measured...1.),
+              afr_commanded = as.numeric(Air.Fuel.Ratio.Commanded...1.),
+              fuel_flow_rate = as.numeric(Fuel.flow.rate.minute.cc.min.),
+              mass_air_flow = as.numeric(Mass.Air.Flow.Rate.g.s.),
+              ambient_air_temp = as.numeric(Ambient.air.temp..C.),
+              intake_air_temp = as.numeric(Intake.Air.Temperature..C.),
+              engine_coolant_temp = as.numeric(Engine.Coolant.Temperature..C.),
+              gps_speed = as.numeric(Speed..GPS..km.h.),
+              obd_speed = as.numeric(Speed..OBD..km.h.))
+  return(df)
+}
+```
+
+
+```{r}
+torque_data <- read.csv('trackLog-2021-jun-20_07-07-22.csv')
+
+splits <- c(1,which(torque_data$GPS.Time == 'GPS Time'))
+
+torque_ls <- list()
+for(i in 1:length(splits)){
+  if(i == 1){
+    torque_ls[[i]] <- data_correct(torque_data[(splits[i]):(splits[i+1]-1),])
+  }
+  if(i != length(splits)){
+    torque_ls[[i]] <- data_correct(torque_data[(splits[i]+1):(splits[i+1]-1),])
+  }else{
+    torque_ls[[i]] <- data_correct(torque_data[(splits[i]+1):(splits[length(splits)]),])
+  }
+}
+
+reduced_data <- torque_ls[[1]] %>% 
+  select(device_time, obd_speed, torque, fuel_flow_rate,
+         power_at_wheels, throttle_position, relative_throttle,
+         barometric_pressure, rpm, afr_commanded, ambient_air_temp, intake_air_temp) %>% 
+  na.omit()
+
+reduced_data_2 <- torque_ls[[4]] %>% 
+  select(device_time, obd_speed, torque, fuel_flow_rate,
+         power_at_wheels, throttle_position, relative_throttle,
+         barometric_pressure, rpm, afr_commanded, ambient_air_temp, intake_air_temp) %>% 
+  na.omit()
+```
+
+
+```{r}
+# plot(reduced_data$device_time, reduced_data$obd_speed, type = 'l')
+# lines(reduced_data$device_time, reduced_data$altitude/10, col = 'red')
+
+# png(filename = 'numeric_vars.png', width = 4800, height = 4800)
+# plot(reduced_data %>% select(obd_speed, torque, engine_absolute_load, fuel_flow_rate,
+#                              power_at_wheels, throttle_position, relative_throttle,
+#                              barometric_pressure, rpm, afr_commanded, ambient_air_temp, intake_air_temp) %>% na.omit())
+# dev.off()
+
+# plot(decompose(ts(na.omit(reduced_data$obd_speed),frequency = 100)))
+# 
+# ts_red <- as.data.frame(decompose(ts(na.omit(reduced_data),frequency = 100))$trend)
+# names(ts_red) <- names(reduced_data)
+# 
+# library(signal)
+# bf <- butter(3, 1/15, type = 'low')
+# b <- filter(bf, reduced_data$obd_speed)
+# 
+# test <- t(apply(X = reduced_data[,2:ncol(reduced_data)],
+#                 MARGIN = 1, 
+#                 FUN = function(x){filter(butter(3, 1/15, type = 'low'), x)})) %>% 
+#   as.data.frame() 
+# names(test) <- names(reduced_data)[2:ncol(reduced_data)]
+# test <- test %>% mutate(device_time = reduced_data$device_time)
+```
+
+
+```{r}
+data <- reduced_data %>% filter(fuel_flow_rate <= 1000) %>% dplyr::select(-device_time) %>% head(2000)
+data2 <- reduced_data_2 %>% filter(fuel_flow_rate <= 1000) %>% dplyr::select(-device_time) 
+
+set.seed(0)
+max_data <- apply(data, 2, max) 
+min_data <- apply(data, 2, min)
+scaled <- scale(data,center = min_data, scale = max_data - min_data)
+
+max_data2 <- apply(data2, 2, max) 
+min_data2 <- apply(data2, 2, min)
+scaled2 <- scale(data2,center = min_data2, scale = max_data2 - min_data2)
+
+# index = sample(1:nrow(data),round(0.70*nrow(data)))
+# train_data <- as.data.frame(scaled[index,])
+# test_data <- as.data.frame(scaled[-index,])
+
+train_data <- as.data.frame(scaled)
+test_data <- as.data.frame(scaled2)
+
+library(neuralnet)
+
+#abrir o CRAN para mostrar
+
+#Fit de neuralnet
+#Executar testes com diferentes arquiteturas
+nn <- neuralnet(fuel_flow_rate~obd_speed+torque+power_at_wheels+throttle_position+
+                  relative_throttle+barometric_pressure+rpm+afr_commanded+ambient_air_temp,
+                data=train_data,hidden=c(4,2,2,3),linear.output=T)
+# plot(nn)
+
+pr.nn <- compute(nn,test_data[,!(names(test_data) %in% 'fuel_flow_rate')])
+pr.nn_ <- pr.nn$net.result*(max(data$fuel_flow_rate)-min(data$fuel_flow_rate))+min(data$fuel_flow_rate)
+test.r <- (test_data$fuel_flow_rate)*(max(data$fuel_flow_rate)-min(data$fuel_flow_rate))+min(data$fuel_flow_rate)
+MSE_nn <- mean((pr.nn_ - test.r)^2); MSE_nn
+```
+
+
+```{r}
+ggplotly(test_data %>% mutate(nn_res = pr.nn$net.result) %>% ggplot(aes(x = c(1:length(fuel_flow_rate)), y = fuel_flow_rate))+geom_line(color = '#f19b3f')+
+  geom_line(aes(y = nn_res), color = '#3f9bf1', alpha = 0.5))
+
+plot(cumsum(test_data$fuel_flow_rate),type = 'l',col="red",xlab = "x", ylab = "Valor Residencia")
+lines(cumsum(pr.nn$net.result),col = "blue")
+```
+
+
+```{r}
+# new_data_input <- crossing(obd_speed = seq(0.2,1.2,by = 0.2),
+#                            torque = c(seq(0.05,0.2, by = 0.05),0.3,0.5,0.8),
+#                            throttle_position = 0.31,
+#                            relative_throttle = 0.31,
+#                            barometric_pressure = c(0.1, 0.8),
+#                            rpm = c(0.2,0.4,0.6),
+#                            afr_commanded = 0.5,
+#                            ambient_air_temp = c(0.2,0.8),
+#                            intake_air_temp = c(0.5)) %>% mutate(power_at_wheels = torque*rpm)
+
+new_data_input <- crossing(obd_speed = seq(0.2,1.2,by = 0.05),
+                           torque = 0.5,
+                           throttle_position = 0.5,
+                           relative_throttle = 0.31,
+                           barometric_pressure = 0.5,
+                           rpm = c(0.2,0.4,0.6,0.8,1),
+                           afr_commanded = 0.5,
+                           ambient_air_temp = 0.5,
+                           intake_air_temp = 0.5) %>% mutate(power_at_wheels = torque*rpm)
+
+
+pr.nn <- compute(nn,new_data_input)
+pr.nn_ <- pr.nn$net.result*(max(data$fuel_flow_rate)-min(data$fuel_flow_rate))+min(data$fuel_flow_rate)
+
+```
+
+
+```{r}
+new_data <- new_data_input %>% mutate(nn_res = pr.nn$net.result)
+new_data %>% 
+  ggplot(aes(x = obd_speed, y = nn_res, color = as.factor(rpm)))+
+  geom_point()
+
+```
