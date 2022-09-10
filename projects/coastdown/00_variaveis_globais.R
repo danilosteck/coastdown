@@ -1,3 +1,7 @@
+library(ggplot2)
+library(jtools)
+library(tidyr)
+library(plotly)
 
 #### Variáveis do veículo
 M <- 1200   # Massa [kg]

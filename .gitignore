@@ -1,1 +1,5 @@
 keys.json
+*.Rproj*
+*.Rproj.user*
+./projects/coastdown/.Rproj.user/*
+

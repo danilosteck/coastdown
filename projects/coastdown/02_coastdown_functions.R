@@ -20,49 +20,6 @@ coefficients_correction <- function(nominal_coefficients, amb_temp, amb_press){
   return(corrected_coefficients)
 }
 
-runif_track_height <- function(n = 3000, min = -0.007, max = 0.007, dS = 1){
-  # track_height_rate <- rnorm(n = n, mean = mean, sd = sd)
-  track_height_rate <- runif(n = n, min = min, max = max)
-  dS <- dS # step de medição da pista em metros
-  S <- seq(0, length(track_height_rate)-1)*dS
-  H <- cumsum(track_height_rate)*dS
-  require(signal)
-  bf <- butter(2, 1/10, type = 'low')
-  H_filt <- signal::filter(bf, H)
-  plot(S, H, type = 'l')
-  lines(S, H_filt, col = 'red')
-  
-  track <- track_calc(data.frame(path = S, height = H))
-  
-  return(track)
-}
-
-rnorm_track_height <- function(n = 3000, mean = -0.0049, sd = 0.0049, dS = 1){
-  # track_height_rate <- rnorm(n = n, mean = mean, sd = sd)
-  track_height_rate <- rnorm(n = n, mean = mean, sd = sd)
-  dS <- dS # step de medição da pista em metros
-  S <- seq(0, length(track_height_rate)-1)*dS
-  H <- cumsum(track_height_rate)*dS
-  require(signal)
-  bf <- butter(2, 1/10, type = 'low')
-  H_filt <- signal::filter(bf, H)
-  plot(S, H, type = 'l')
-  lines(S, H_filt, col = 'red')
-  
-  track <- track_calc(data.frame(path = S, height = H))
-  
-  return(track)
-}
-
-constant_track_height <- function(n = 3000, theta_before = 0, theta_after = 0.0049,dist_change = 600, dS = 1){
-  # track_height_rate <- rnorm(n = n, mean = mean, sd = sd)
-  S <- seq(0, n-1, by = dS)
-  track_height_rate <- if_else(S <= dist_change, theta_before, theta_after)
-  H <- cumsum(track_height_rate)*dS
-  track <- track_calc(data.frame(path = S, height = H))
-  return(track)
-}
-
 coast_force <- function(m, coef, v0, vf, track, dt = 0.1, sp = 0, direction = 'forward'){
   t <- 0
   v <- v0
@@ -134,6 +91,14 @@ coast_force_calc <- function(m, v0, vf, dv, coast_data){
   return(params)
 }
 
+coastdown_sp_func <- function(m, nominal_coefficients, v0, vf, track, way){
+  imp_fun <- function(sp){
+    cd_data <- coast_force(M, nominal_coefficients, v0, vf, track = track, dt = 0.1, sp = sp, direction = way)
+    coefs <- coast_force_calc(m, v0, vf, 5/3.6, cd_data)
+    return(coefs)
+  }
+  return(imp_fun)
+}
 
 cd_startpos_fwd <- function(sp){
   coast_data <- coast_force(M, nominal_coefficients, 100/3.6, 30/3.6, track = track, dt = 0.1, sp, 'forward')
@@ -142,6 +107,7 @@ cd_startpos_fwd <- function(sp){
   }
   return(cd_result)
 }
+
 cd_startpos_bwd <- function(sp){
   coast_data <- coast_force(M, nominal_coefficients, 100/3.6, 30/3.6, track = track, dt = 0.1, sp, 'backward')
   if('sim' %in% coast_data$erro){cd_result <- data.frame(f0 = NA, f2 = NA)}else{
