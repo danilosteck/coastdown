@@ -45,10 +45,22 @@ constant_track_height <- function(n = 3000, theta_before = 0, theta_after = 0.00
 plot_track <- function(track){
   grade_hist <- hist(track$tangent)
   track_height_profile <- plot(track$path,track$height, type = 'l')
+  track_grade <- plot(track$path, track$tangent, type = 'l')
   out <- list()
   out[['grade_hist']] <- grade_hist
   out[['track_height_profile']] <- track_height_profile
+  out[['track_grade']] <- track_grade
   return(out)
+}
+
+filt_grade <- function(track, filt_order, filt_freq){
+  grade_filt <- Re(filter.fft(track$tangent,track$path,fc=filt_freq,BW=filt_order,n=3))
+  H0 <- track$height[1]
+  dH <- (track$ds)*grade_filt
+  H <- cumsum(dH)
+  track$height <- H
+  track$tangent <- grade_filt
+  return(track)
 }
 
 get_max_grade <- function(track){
@@ -57,6 +69,3 @@ get_max_grade <- function(track){
   return(c(max_grade = max_grade, max_tangent = max_tangent))
 }
 
-track_interpolations <- function(track){
-  
-}
